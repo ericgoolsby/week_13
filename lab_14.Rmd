@@ -1,0 +1,379 @@
+---
+title: "Lab 14"
+author: "Eric Goolsby"
+date: "11/23/2021"
+output: html_document
+editor_options: 
+  chunk_output_type: console
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+First let's load the following R packages:
+
+```{r}
+library(tidyverse)
+library(easystats)
+```
+
+## Linear Regression and p-values
+
+When you fit a linear regression on two variables (`X` and `Y`), you are assessing whether the two variables are correlated. We can simulate correlated data using the `rnorm` function. In the code chunk below, I've simulated a correlated dataset: the simulated slope is 3, and the simulated y-intercept is -5.
+
+```{r}
+x <- rnorm(n = 100,mean = 0,sd = 1)
+y <- 3*x - 5 + rnorm(n = 100,mean = 0,sd = 1)
+dat1 <- data.frame(x = x,y = y)
+
+mod1 <- lm(y~x,data = dat1)
+```
+
+We can visualize the relationship using the `easystats` package `see`:
+
+```{r}
+mod1 %>% 
+  estimate_prediction() %>% 
+  plot() + 
+  theme_classic()
+```
+
+We can also check out the regression coefficients (intercept and slope), as well as the summary statistics like R-squared and the p-value for the regression:
+
+```{r}
+coef(mod1)
+summary(mod1)
+```
+
+The R-squared values is a measure of variance explained. An R-squared of zero means there's no correlation whatsoever, whereas an R-squared of 1 indiciates a 100% perfect fit. To access the R-squared value for our model:
+
+```{r}
+summary(mod1)$r.squared
+```
+
+A p-value is a hypothesis test. Normally, if `p < 0.05`, then the null hypothesis is rejected and we generally say it's a 'significant' result (for better or worse). So a linear regression with a `p < 0.05` might be described as a significant correlation between `x` and `y`.
+
+Getting the p-value is slightly trickier. In the output of `summary(mod1)` there are three p-values: 1) one for the intercept under the column `Pr(>|t|)`, 2) another for the `x` slope right underneath the intercept p-value, and finally 3) the p-value for the overall regression (bottom right of the output of `summary(mod1)`). You'll notice the second and third p-values are the same. That's true if you only have one predictor (as we do here), but they're different if you have multiple predictors (i.e. multiple regression).
+
+The overall regression p-value is computed internally using an F-test:
+```{r}
+f <- summary(mod1)$fstatistic
+p <- pf(f[1],f[2],f[3],lower.tail=F)
+```
+
+But since we only have one predictor, we can just retrieve the p-value for the slope. The following function (from the `parameters` package within `easystats`) gives you the intercept and slope p-values (in order), so we want the second p-value.
+
+```{r}
+parameters(mod1)$p
+parameters(mod1)$p[2]
+```
+
+Note: you could also extract it from the table in `summary(mod1)$coefficients`, which is faster than the `parameters` function, but slightly trickier:
+
+```{r}
+summary(mod1)$coefficients
+summary(mod1)$coefficients[2,4]
+```
+
+Now let's simulate some non-correlated data. In other words, `x` and `y` will be indepednent:
+
+```{r}
+x <- rnorm(n = 100,mean = 0,sd = 1)
+y <- rnorm(n = 100,mean = 0,sd = 1)
+dat2 <- data.frame(x = x,y = y)
+
+mod2 <- lm(y~x,data = dat2)
+mod2 %>% 
+  estimate_prediction() %>% 
+  plot() + 
+  theme_classic()
+```
+
+In this example, we basically have a flat line (and very wide confidence intervals). The R-squared value is very low, and the p-value is probably greater than 0.05:
+
+```{r}
+summary(mod2)
+```
+
+Interestingly, if you run the regerssion multiple times, you'll notice tha you get a 'significant' correlation about 5% of the time. When this happens, it's called a false positive. Try running the following code over and over again until you see a false positive (a p-value that is less than 0.05). Count how many times you have to click the green button before to get a significant p-value:
+
+```{r}
+x <- rnorm(n = 100,mean = 0,sd = 1)
+y <- rnorm(n = 100,mean = 0,sd = 1)
+dat3 <- data.frame(x = x,y = y)
+
+mod3 <- lm(y~x,data = dat3)
+summary(mod3)$coefficients[2,4]
+```
+
+## for loops
+
+The manual re-running is effective, but tedious. We can avoid repetitive coding with loops. A loop simply allows you to repeat code automatically, as follows:
+
+```{r}
+for(i in 1:15)
+{
+  cat("The current value of i is",i,"\n")
+}
+```
+
+We can loop over any values we want:
+
+```{r}
+values <- c(2,4,6,8,100)
+
+for(i in values)
+{
+  cat("The current value of i is",i,"\n")
+}
+```
+
+And we can even create nested loops. Examine the following output:
+
+```{r}
+for(i in 1:5)
+{
+  for(j in 1:3)
+  {
+    cat("The current value of i is",i,"and the current value of j is",j,"\n")
+  }
+}
+```
+
+OK, getting back to linear regression and false positives. Let's run our regression 1000 times, and store the regression p-values in a vector. Then we can check and see how often we get a false positive:
+
+```{r}
+p_values <- numeric(length = 1000)
+
+for(i in 1:1000)
+{
+  x <- rnorm(n = 100,mean = 0,sd = 1)
+  y <- rnorm(n = 100,mean = 0,sd = 1)
+  dat3 <- data.frame(x = x,y = y)
+
+  mod3 <- lm(y~x,data = dat3)
+  p_values[i] <- summary(mod3)$coefficients[2,4]
+
+}
+```
+
+Notice in the above code chunk, we stored the p-value in position `[i]` of the vector. That's one of the useful ways we can use for loops to our advantage. Let's see how often we got a false positive (how many out of 1000 runs). We use `p_values < 0.05` to create a logical vector. We can count the number of `TRUE` values by using `sum(p_values)`, because `TRUE` has a value of `1` and `FALSE` has a value of `0`. We can multiply the fraction by `100` to convert it to a percentage:
+
+```{r}
+sum(p_values < 0.05) / length(p_values) * 100
+```
+
+On my computer, I got 5% exactly on the first time. The second time, I got 6.4%. The third time, 5.2%. You get the idea. It's not always going to be exactly 5% false positives, but *on average* there is a 5% change of a false positive for uncorrelated data.
+
+## Assumptions of linear regression
+
+When we run linear regression, we are assuming that our data are independnet and identically distributed (i.i.d.). (Technically, we're assuming the residuals (`y - (m*x + b)`) are i.i.d.). Let's see what happens when we violate the assumption of independence.
+
+We're going to simulate `x` and `y` in three steps. First, let's simulate two (uncorrelated) data points for `x` and `y`. Let's call these `part_one`.
+
+```{r}
+x_part_one <- rnorm(n = 2,mean = 0,sd = 10)
+y_part_one <- rnorm(n = 2,mean = 0,sd = 10)
+```
+
+Let's use these two data points as mean values in `rnorm` for generating 25 random data points (25 data points for each data point). Let's also make the `sd = 0.1` We'll call these `part_two` and `part_three`:
+
+```{r}
+x_part_two <- rnorm(n = 25,mean = x_part_one[1],sd = 0.1)
+x_part_three <- rnorm(n = 25,mean = x_part_two[2],sd = 0.1)
+
+y_part_two <- rnorm(n = 25,mean = y_part_one[1],sd = 0.1)
+y_part_three <- rnorm(n = 25,mean = y_part_two[2],sd = 0.1)
+```
+
+Let's discard `part_one`, and put the rest together, and plot the result:
+
+```{r}
+x <- c(x_part_two,x_part_three)
+y <- c(y_part_two,y_part_three)
+dat4 <- data.frame(x = x,y = y)
+
+mod4 <- lm(y~x, data = dat4)
+mod4 %>% 
+  estimate_prediction() %>% 
+  plot() +
+  theme_classic()
+```
+
+This dataset violates the assumption of independence. `x` and `y` are both random, but half of their values originated from the first data point `part_one[1]`, and half their values originated from the second data point `part_one[2]`. Let's run this simulation in a loop and see what this does to our false positive rate:
+
+```{r}
+p_values <- numeric(length = 1000)
+
+for(i in 1:1000)
+{
+  x_part_one <- rnorm(n = 2,mean = 0,sd = 10)
+  y_part_one <- rnorm(n = 2,mean = 0,sd = 10)
+  x_part_two <- rnorm(n = 25,mean = x_part_one[1],sd = 0.1)
+  x_part_three <- rnorm(n = 25,mean = x_part_two[2],sd = 0.1)
+
+  y_part_two <- rnorm(n = 25,mean = y_part_one[1],sd = 0.1)
+  y_part_three <- rnorm(n = 25,mean = y_part_two[2],sd = 0.1)
+  
+  x <- c(x_part_two,x_part_three)
+  y <- c(y_part_two,y_part_three)
+  dat4 <- data.frame(x = x,y = y)
+  
+  mod4 <- lm(y~x, data = dat4)
+  p_values[i] <- summary(mod4)$coefficients[2,4]
+}
+
+sum(p_values < 0.05) / length(p_values)
+```
+
+The false positive rate is now almost 20%! You might be wondering, why is this relevant? When would this ever happen in the real world?
+
+Suppose it's 1 million years ago, and the common ancestor of a frog species just underwent a speciation event. In other words, there are two frog species (with the same common ancestor). Imagine we're interested in the following traits: frog tongue length (`x`), and how high they can hop (`y`).
+
+Now, fast-forward 900,000 years. The species are evolving in different ecological niches, and the tonguge length and hop height for the two species is gradually evolving to different values.
+
+Now, imagine that the first frog species colonizes 25 islands, and the second frog species colonizes 25 *different* islands. In other words: *instant speciation event*. Two species are now 50 species.
+
+Let the 50 frog species evolve on their islands for 100,000 years. Now finally, at present day, let's measure each species tongue length and hop heights. Suppose we observe a significant correlation. Can we safely assume that these two traits are correlated?
+
+It might be tempting to say "of course!". However, as we saw with our simulations, when you violate the assumption of independence (as is the case when you have evolutionarily related species), then your risk of seeing a false positive correlation increases.
+
+This leads us to the work of Felsenstein 1985: *Phylogenies and the Comparative Method*. We can use some R package to simulate this. Install the following R packages if you don't have them already, and then load them:
+
+```{r}
+# install.packages("ape")
+# install.packages("phylolm")
+# install.packages("phytools")
+
+library(ape)
+library(phylolm)
+library(phytools)
+```
+
+We can build a phylogenetic tree that matches our 50 frog species. Don't worry about the code, just run it:
+
+```{r}
+treeA <- starTree(species = paste("frog_A_",1:25,sep=""),branch.lengths = rep(.1,25))
+treeB <- starTree(species = paste("frog_B_",26:50,sep=""),branch.lengths = rep(.1,25))
+treeA$root.edge <- 0.9
+treeB$root.edge <- 0.9
+tree <- bind.tree(treeA,treeB,where = "root",position = 0.9)
+```
+
+Now let's plot our frog phylogeny:
+
+```{r}
+plot(tree,cex = 0.7)
+```
+
+Now let's simulate some trait evolution on the tree (I've added 10 to both of them so they are positive values)
+
+```{r}
+tongue_length <- rTrait(n = 1,phy = tree) + 10
+hop_height <- rTrait(n = 1,phy = tree) + 10
+
+tongue_length
+
+hop_height
+```
+
+We can use phylogenetic comparative methods to reconstruct the evolutionary history of these traits:
+
+```{r}
+par(mfrow=c(1,1))
+contMap(tree = tree,x = tongue_length)
+contMap(tree = tree,x = hop_height)
+```
+
+Warning -- the `contMap` function does weird things to the plot area. Run the function `dev.off()` when you're done using `contMap` if you want to make other types of plots.
+
+```{r}
+# dev.off()
+```
+
+Let's try generating this data few times and look at the different distributions of the trait values. Click the green button a few times below and see if the traits appear correlated (remember: the traits are actually independent, so any appearance of correlation is a relic of evolutionary history!)
+
+```{r}
+tongue_length <- rTrait(n = 1,phy = tree) + 10
+hop_height <- rTrait(n = 1,phy = tree) + 10
+
+frog_dat <- data.frame(tongue_length = tongue_length,hop_height = hop_height,lineage = c(rep("A",25),rep("B",25)))
+mod_frog <- lm(hop_height ~ tongue_length,data = frog_dat)
+
+frog_dat %>% 
+  ggplot(mapping = aes(x = tongue_length,y = hop_height)) + 
+  stat_smooth(method = "lm") + 
+  geom_point(mapping = aes(color = lineage))
+```
+
+It turns out there are ways to account for these evolutionary relics. The classical approach is called phylogenetically independent contrasts (PICs) (Felsenstein 1985), which reconstructs the evolutionary history of bot trait values, and assesses whether or not the traits consistently evolved in a correlated manner, from anestral nodes to present day, *rather than* assessing the correlation on present day species.
+
+I've include the code for PICs below. If we plot the phylogenetically independent contrasts (rather than the present-day species data), we can see the evolutionary relic disappears:
+
+```{r}
+ditree <- multi2di(tree,random = FALSE)
+tongue_length_pic <- pic(tongue_length,ditree)
+hop_height_pic <- pic(hop_height,ditree)
+
+frog_dat_pics <- data.frame(tongue_length_pic = tongue_length_pic,hop_height_pic = hop_height_pic)
+mod_frog_pics <- lm(hop_height_pic ~ tongue_length_pic,data = frog_dat)
+
+frog_dat_pics %>% 
+  ggplot(mapping = aes(x = tongue_length_pic,y = hop_height_pic)) + 
+  stat_smooth(method = "lm",formula = y~x-1) + 
+  geom_point()
+```
+
+A newer (statistically equivalent) approach is now available, and it's called phylogenetic regression (also known as phylogenetic generalized least squares, or PGLS). It's advantageous because we don't have to use contrasts -- we can simply account for phylogeny when looking at species data:
+
+```{r}
+phylo_mod <- phylolm(hop_height ~ tongue_length,phy = tree,data = frog_dat)
+summary(phylo_mod)
+```
+
+Let's compare the false positive rate for regular regression vs phylogenetic regression:
+
+```{r}
+
+lm_p_values <- numeric(length = 1000)
+phylo_p_values <- numeric(length = 1000)
+
+for(i in 1:1000)
+{
+  tongue_length <- rTrait(n = 1,phy = tree) + 10
+  hop_height <- rTrait(n = 1,phy = tree) + 10
+  
+  frog_dat <- data.frame(tongue_length = tongue_length,hop_height = hop_height,lineage = c(rep("A",25),rep("B",25)))
+  mod_frog <- lm(hop_height ~ tongue_length,data = frog_dat)
+  phylo_mod <- phylolm(hop_height ~ tongue_length,phy = tree,data = frog_dat)
+  
+  lm_p_values[i] <- summary(mod_frog)$coefficients[2,4]
+  phylo_p_values[i] <- summary(phylo_mod)$coefficients[2,4]
+}
+
+sum(lm_p_values < .05) / length(lm_p_values) * 100
+sum(phylo_p_values < .05) / length(phylo_p_values) * 100
+```
+
+For non-phylogenetic regression, we see a falst positive about 75% of the time!! With phylogenetic regression, we only see a false positive about 5% of the time.
+
+There are so many applications of phylogenetic comparative methods in addition to what we have covered here. We can also study the evolutionary history of discrete (categorical) traits:
+
+```{r}
+tree <- pbtree(n = 50)
+plot(tree)
+
+# simulate binary trait
+binary_trait <- rbinTrait(n = 1,phy = tree,beta=c(0), alpha=1)
+
+# reconstruct evolutionary history
+reconstruction <- ace(x = binary_trait,type = "discrete",phy = tree)
+
+# plot evolutionary history
+plot(tree)
+tiplabels(pie = binary_trait,cex = 0.5)
+nodelabels(pie = reconstruction$lik.anc[,2],cex = 0.5)
+```
+
+Feel free to reach out to me if you're interested in learning more about phylogenetic comparative methods. It's my favorite topic! As a shameless self-plug, here's a link to my R package, Rphylopars: <https://github.com/ericgoolsby/Rphylopars/wiki>.
